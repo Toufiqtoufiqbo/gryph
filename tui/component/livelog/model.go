@@ -69,7 +69,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.eventList.append(msg.events, m.streamWidth())
 			m.updateSessionCount()
 			newest := msg.events[len(msg.events)-1]
-			m.lastPollAt = newest.Timestamp
+			m.lastPollAt = newest.Timestamp.UTC()
 		}
 		if m.lastPollAt.IsZero() {
 			m.lastPollAt = time.Now().UTC()
