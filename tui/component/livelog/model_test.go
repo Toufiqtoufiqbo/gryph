@@ -119,6 +119,7 @@ func TestUpdate_NonUTCTimestampCursorNormalizedToUTC(t *testing.T) {
 	assert.Same(t, time.UTC, m.lastPollAt.Location(), "cursor must use UTC")
 	_, cursorOffset := m.lastPollAt.Zone()
 	assert.Equal(t, 0, cursorOffset, "cursor offset must be zero")
+	assert.True(t, m.lastPollAt.Equal(evt.Timestamp), "cursor must keep the newest event instant")
 
 	pollCmd := pollEvents(m.opts.Store, m.lastPollAt, m.agentFilter, 100)
 	require.NotNil(t, pollCmd)
@@ -128,6 +129,7 @@ func TestUpdate_NonUTCTimestampCursorNormalizedToUTC(t *testing.T) {
 	assert.Same(t, time.UTC, store.after.Location(), "poll cursor must use UTC")
 	_, pollOffset := store.after.Zone()
 	assert.Equal(t, 0, pollOffset, "poll cursor offset must be zero")
+	assert.True(t, store.after.Equal(evt.Timestamp), "poll cursor must keep the newest event instant")
 }
 
 func TestLoadInitialEvents_EmptyStoreReturnsNoEvents(t *testing.T) {
