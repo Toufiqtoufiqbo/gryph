@@ -42,7 +42,7 @@ func New(opts Options) Model {
 func (m Model) Init() tea.Cmd {
 	since := m.opts.Since
 	if since.IsZero() {
-		since = time.Now().Add(-24 * time.Hour)
+		since = time.Now().UTC().Add(-24 * time.Hour)
 	}
 	return tea.Batch(
 		loadInitialEvents(m.opts.Store, since, m.agentFilter, m.opts.initialLimit()),
@@ -72,7 +72,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.lastPollAt = newest.Timestamp
 		}
 		if m.lastPollAt.IsZero() {
-			m.lastPollAt = time.Now()
+			m.lastPollAt = time.Now().UTC()
 		}
 		return m, nil
 
