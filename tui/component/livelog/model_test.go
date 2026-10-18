@@ -85,7 +85,7 @@ func TestUpdate_EmptyInitialLoadSetsLastPollAtInUTC(t *testing.T) {
 	_, cursorOffset := m.lastPollAt.Zone()
 	assert.Equal(t, 0, cursorOffset, "cursor offset must be zero")
 
-	pollCmd := pollEvents(m.opts.Store, m.lastPollAt, m.agentFilter, 100)
+	pollCmd := pollEvents(m.opts.Store, m.cursor(), m.agentFilter, 100)
 	require.NotNil(t, pollCmd)
 	pollCmd()
 
@@ -121,7 +121,7 @@ func TestUpdate_NonUTCTimestampCursorNormalizedToUTC(t *testing.T) {
 	assert.Equal(t, 0, cursorOffset, "cursor offset must be zero")
 	assert.True(t, m.lastPollAt.Equal(evt.Timestamp), "cursor must keep the newest event instant")
 
-	pollCmd := pollEvents(m.opts.Store, m.lastPollAt, m.agentFilter, 100)
+	pollCmd := pollEvents(m.opts.Store, m.cursor(), m.agentFilter, 100)
 	require.NotNil(t, pollCmd)
 	pollCmd()
 

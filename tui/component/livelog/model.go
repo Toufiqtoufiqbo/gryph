@@ -5,6 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/google/uuid"
 	"github.com/safedep/gryph/core/events"
 )
 
@@ -23,7 +24,13 @@ type Model struct {
 	paused      bool
 	agentFilter string
 	lastPollAt  time.Time
+	lastPollID  uuid.UUID
 	ready       bool
+}
+
+// cursor returns the compound position for the next poll.
+func (m Model) cursor() pollCursor {
+	return pollCursor{at: m.lastPollAt, id: m.lastPollID}
 }
 
 func New(opts Options) Model {
@@ -68,8 +75,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.eventList.append(msg.events, m.streamWidth())
 			m.updateSessionCount()
-			newest := msg.events[len(msg.events)-1]
-			m.lastPollAt = newest.Timestamp.UTC()
+		}
+		if msg.cursor.valid() {
+			m.lastPollAt = msg.cursor.at
+			m.lastPollID = msg.cursor.id
 		}
 		if m.lastPollAt.IsZero() {
 			m.lastPollAt = time.Now().UTC()
@@ -81,7 +90,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, schedulePoll(m.opts.pollInterval())
 		}
 		return m, tea.Batch(
-			pollEvents(m.opts.Store, m.lastPollAt, m.agentFilter, 100),
+			pollEvents(m.opts.Store, m.cursor(), m.agentFilter, 100),
 			schedulePoll(m.opts.pollInterval()),
 		)
 
