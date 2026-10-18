@@ -330,7 +330,10 @@ func eventCreate(client *ent.Client, event *events.Event) (*ent.AuditEventCreate
 		SetID(event.ID).
 		SetSessionID(event.SessionID).
 		SetSequence(event.Sequence).
-		SetTimestamp(event.Timestamp).
+		// Timestamps are stored as text and compared lexicographically, so a
+		// retained offset (e.g. -05:00) would sort against a UTC cursor by wall
+		// clock, not instant. Normalize at the persistence boundary.
+		SetTimestamp(event.Timestamp.UTC()).
 		SetAgentName(event.AgentName).
 		SetActionType(auditevent.ActionType(event.ActionType)).
 		SetResultStatus(auditevent.ResultStatus(event.ResultStatus)).

@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -305,6 +306,55 @@ func TestSQLiteStore_QueryEventsOrdersTiesByID(t *testing.T) {
 	for i, e := range descPage {
 		assert.Equal(t, ids[total-1-i], e.ID, "descending page must hold the largest ids")
 	}
+}
+
+// TestSQLiteStore_QueryEventsAfterNormalizesNonUTCTimestamp covers events
+// imported with a non-UTC offset. The driver stores timestamps as text, so an
+// unnormalized offset can sort before a UTC cursor even though the instant is
+// later, which makes QueryEventsAfter skip the event.
+func TestSQLiteStore_QueryEventsAfterNormalizesNonUTCTimestamp(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	store, err := NewSQLiteStore(dbPath)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, store.Close()) }()
+
+	ctx := context.Background()
+	require.NoError(t, store.Init(ctx))
+
+	sessionID := uuid.New()
+	createTestSession(t, store, sessionID, "claude-code")
+
+	// 00:31 at -05:00 is the same instant as 05:31 UTC. A cursor at 05:30 UTC
+	// precedes it chronologically but not lexicographically when the offset is
+	// still present in the stored text.
+	imported := time.Date(2025, 3, 1, 0, 31, 0, 0, time.FixedZone("EST", -5*60*60))
+	require.NoError(t, store.SaveEvent(ctx, &events.Event{
+		ID:           uuid.MustParse("11111111-1111-4111-8111-111111111111"),
+		SessionID:    sessionID,
+		Sequence:     1,
+		Timestamp:    imported,
+		AgentName:    "claude-code",
+		ActionType:   events.ActionFileRead,
+		ResultStatus: events.ResultSuccess,
+		Imported:     true,
+	}))
+
+	// Record the physical representation to document the text comparison.
+	raw, err := sql.Open("sqlite", dbPath)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, raw.Close()) }()
+	var stored, quoted, kind string
+	require.NoError(t, raw.QueryRowContext(ctx, `SELECT timestamp, quote(timestamp), typeof(timestamp) FROM audit_events`).Scan(&stored, &quoted, &kind))
+	t.Logf("stored timestamp: kind=%s quoted=%s go=%q", kind, quoted, stored)
+
+	cursor := time.Date(2025, 3, 1, 5, 30, 0, 0, time.UTC)
+	got, err := store.QueryEventsAfter(ctx, cursor, uuid.Nil, 10)
+	require.NoError(t, err)
+	require.Len(t, got, 1, "the imported event is chronologically after the UTC cursor")
+
+	// The round-tripped instant must match 05:31 UTC.
+	require.True(t, got[0].Timestamp.Equal(imported))
+	require.True(t, got[0].Timestamp.UTC().Equal(time.Date(2025, 3, 1, 5, 31, 0, 0, time.UTC)))
 }
 
 func TestSQLiteStore_QueryEventsWithTimeFilter(t *testing.T) {
