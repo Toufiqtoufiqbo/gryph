@@ -470,9 +470,9 @@ func (s *SQLiteStore) QueryEvents(ctx context.Context, filter *events.EventFilte
 	}
 
 	if filter.IsAscending() {
-		query.Order(auditevent.ByTimestamp(entsql.OrderAsc()))
+		query.Order(auditevent.ByTimestamp(entsql.OrderAsc()), auditevent.ByID(entsql.OrderAsc()))
 	} else {
-		query.Order(auditevent.ByTimestamp(entsql.OrderDesc()))
+		query.Order(auditevent.ByTimestamp(entsql.OrderDesc()), auditevent.ByID(entsql.OrderDesc()))
 	}
 
 	// Apply limit and offset

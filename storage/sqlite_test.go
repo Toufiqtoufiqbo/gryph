@@ -234,6 +234,79 @@ func TestSQLiteStore_QueryEvents(t *testing.T) {
 	assert.Len(t, results, 0)
 }
 
+func TestSQLiteStore_QueryEventsOrdersTiesByID(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	sessionID := uuid.New()
+	createTestSession(t, store, sessionID, "claude-code")
+
+	// Every event shares one timestamp, so only the id can order them.
+	sameTime := time.Date(2025, 2, 1, 9, 0, 0, 0, time.UTC)
+
+	const total = 6
+	ids := make([]uuid.UUID, total)
+	for i := range ids {
+		ids[i] = uuid.New()
+	}
+	for i := 0; i < len(ids); i++ {
+		for j := i + 1; j < len(ids); j++ {
+			if ids[i].String() > ids[j].String() {
+				ids[i], ids[j] = ids[j], ids[i]
+			}
+		}
+	}
+
+	// Insert in an order that matches neither the ascending nor the
+	// descending id order. A missing id tie break cannot pass by accident.
+	for seq, idx := range []int{2, 5, 0, 4, 1, 3} {
+		err := store.SaveEvent(ctx, &events.Event{
+			ID:           ids[idx],
+			SessionID:    sessionID,
+			Sequence:     seq + 1,
+			Timestamp:    sameTime,
+			AgentName:    "claude-code",
+			ActionType:   events.ActionFileRead,
+			ResultStatus: events.ResultSuccess,
+		})
+		require.NoError(t, err)
+	}
+
+	// A full ascending query returns the ids in order.
+	asc, err := store.QueryEvents(ctx, events.NewEventFilter().WithSort(events.SortAsc))
+	require.NoError(t, err)
+	require.Len(t, asc, total)
+	for i, e := range asc {
+		assert.Equal(t, ids[i], e.ID, "ascending ties must order by id")
+	}
+
+	// A descending query returns the ids in reverse order.
+	desc, err := store.QueryEvents(ctx, events.NewEventFilter().WithSort(events.SortDesc))
+	require.NoError(t, err)
+	require.Len(t, desc, total)
+	for i, e := range desc {
+		assert.Equal(t, ids[total-1-i], e.ID, "descending ties must order by id")
+	}
+
+	// A limit inside the tie group keeps the smallest ids ascending.
+	const limit = 4
+	ascPage, err := store.QueryEvents(ctx, events.NewEventFilter().WithSort(events.SortAsc).WithLimit(limit))
+	require.NoError(t, err)
+	require.Len(t, ascPage, limit)
+	for i, e := range ascPage {
+		assert.Equal(t, ids[i], e.ID, "ascending page must hold the smallest ids")
+	}
+
+	// A descending limit keeps the largest ids descending.
+	descPage, err := store.QueryEvents(ctx, events.NewEventFilter().WithSort(events.SortDesc).WithLimit(limit))
+	require.NoError(t, err)
+	require.Len(t, descPage, limit)
+	for i, e := range descPage {
+		assert.Equal(t, ids[total-1-i], e.ID, "descending page must hold the largest ids")
+	}
+}
+
 func TestSQLiteStore_QueryEventsWithTimeFilter(t *testing.T) {
 	store, cleanup := setupTestStore(t)
 	defer cleanup()
