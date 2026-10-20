@@ -848,6 +848,9 @@ func (s *SQLiteStore) QuerySelfAudits(ctx context.Context, filter *SelfAuditFilt
 
 // QueryEventsAfter retrieves events after the given time, ordered ascending.
 func (s *SQLiteStore) QueryEventsAfter(ctx context.Context, after time.Time, afterID uuid.UUID, limit int) ([]*events.Event, error) {
+	// Bounds reach the same text comparison as the stored timestamps, so a
+	// caller-supplied offset must not survive into the predicate.
+	after = after.UTC()
 	query := s.client.AuditEvent.Query()
 
 	if afterID != uuid.Nil {
@@ -1213,10 +1216,10 @@ func buildEventPredicates(filter *events.EventFilter) []predicate.AuditEvent {
 	var predicates []predicate.AuditEvent
 
 	if filter.Since != nil {
-		predicates = append(predicates, auditevent.TimestampGTE(*filter.Since))
+		predicates = append(predicates, auditevent.TimestampGTE((*filter.Since).UTC()))
 	}
 	if filter.Until != nil {
-		predicates = append(predicates, auditevent.TimestampLTE(*filter.Until))
+		predicates = append(predicates, auditevent.TimestampLTE((*filter.Until).UTC()))
 	}
 	if len(filter.AgentNames) > 0 {
 		predicates = append(predicates, auditevent.AgentNameIn(filter.AgentNames...))

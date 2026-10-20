@@ -357,6 +357,64 @@ func TestSQLiteStore_QueryEventsAfterNormalizesNonUTCTimestamp(t *testing.T) {
 	require.True(t, got[0].Timestamp.UTC().Equal(time.Date(2025, 3, 1, 5, 31, 0, 0, time.UTC)))
 }
 
+// TestSQLiteStore_QueryBoundsNormalizeToUTC covers filter bounds and cursors
+// that carry a non-UTC offset. Bounds reach the same text comparison as the
+// stored timestamps, so an unnormalized offset can include or exclude events
+// for the wrong instant.
+func TestSQLiteStore_QueryBoundsNormalizeToUTC(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	sessionID := uuid.New()
+	createTestSession(t, store, sessionID, "claude-code")
+
+	// Two events at 10:00 and 10:10 UTC.
+	early := time.Date(2025, 3, 1, 10, 0, 0, 0, time.UTC)
+	late := time.Date(2025, 3, 1, 10, 10, 0, 0, time.UTC)
+	require.NoError(t, store.SaveEvent(ctx, &events.Event{
+		ID:           uuid.MustParse("22222222-2222-4222-8222-222222222222"),
+		SessionID:    sessionID,
+		Sequence:     1,
+		Timestamp:    early,
+		AgentName:    "claude-code",
+		ActionType:   events.ActionFileRead,
+		ResultStatus: events.ResultSuccess,
+	}))
+	require.NoError(t, store.SaveEvent(ctx, &events.Event{
+		ID:           uuid.MustParse("33333333-3333-4333-8333-333333333333"),
+		SessionID:    sessionID,
+		Sequence:     2,
+		Timestamp:    late,
+		AgentName:    "claude-code",
+		ActionType:   events.ActionFileRead,
+		ResultStatus: events.ResultSuccess,
+	}))
+
+	// 15:25 at +05:30 is 09:55 UTC, before both events. An unnormalized bound
+	// keeps the offset in its text and sorts after "10:0", excluding both.
+	since := time.Date(2025, 3, 1, 15, 25, 0, 0, time.FixedZone("IST", 5*60*60+30*60))
+	got, err := store.QueryEvents(ctx, events.NewEventFilter().WithSince(since).WithSort(events.SortAsc))
+	require.NoError(t, err)
+	require.Len(t, got, 2, "both events are at or after the 09:55 UTC bound")
+	assert.Equal(t, early, got[0].Timestamp.UTC())
+	assert.Equal(t, late, got[1].Timestamp.UTC())
+
+	// 05:05 at -05:00 is 10:05 UTC, between the two events.
+	until := time.Date(2025, 3, 1, 5, 5, 0, 0, time.FixedZone("EST", -5*60*60))
+	got, err = store.QueryEvents(ctx, events.NewEventFilter().WithUntil(until).WithSort(events.SortAsc))
+	require.NoError(t, err)
+	require.Len(t, got, 1, "only the 10:00 UTC event is at or before the 10:05 UTC bound")
+	assert.Equal(t, early, got[0].Timestamp.UTC())
+
+	// The same instant as a polling cursor must resume past both events.
+	got, err = store.QueryEventsAfter(ctx, since, uuid.Nil, 10)
+	require.NoError(t, err)
+	require.Len(t, got, 2, "both events are after the 09:55 UTC cursor")
+	assert.Equal(t, early, got[0].Timestamp.UTC())
+	assert.Equal(t, late, got[1].Timestamp.UTC())
+}
+
 func TestSQLiteStore_QueryEventsWithTimeFilter(t *testing.T) {
 	store, cleanup := setupTestStore(t)
 	defer cleanup()
